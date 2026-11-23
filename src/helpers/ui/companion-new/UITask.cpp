@@ -1,4 +1,5 @@
 #include "UITask.h"
+#include <helpers/AdvertDataHelpers.h>
 #include <helpers/TxtDataHelpers.h>
 #include "target.h"
 #include <time.h>
@@ -25,10 +26,12 @@
   #define UI_RECENT_LIST_SIZE 4
 #endif
 
-#if UI_HAS_JOYSTICK || UI_HAS_ROTARY_INPUT
+#if UI_HAS_JOYSTICK || (defined(PIN_USER_BTN) && defined(UI_HAS_NAV_INPUT))
   #define PRESS_LABEL "press Enter"
+  #define SCAN_HINT "Press Enter to scan"
 #else
   #define PRESS_LABEL "long press"
+  #define SCAN_HINT "Hold to scan"
 #endif
 
 // Copied from simple_repeater
@@ -158,6 +161,15 @@ class HomeScreen : public UIScreen {
   uint32_t disc_node_req_tag = 0;
   uint32_t disc_nodes_count = 0;
   uint32_t discovery_req_time = 0;
+  enum class DiscoveryState { Idle, Waiting, CanRetry, SendFailed };
+  DiscoveryState discoveryState = DiscoveryState::Idle;
+
+  DiscoveryState updateDiscoveryState() {
+    if (discoveryState == DiscoveryState::Waiting && millis() - discovery_req_time >= 5000) {
+      discoveryState = DiscoveryState::CanRetry;
+    }
+    return discoveryState;
+  }
 #endif
 
   void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
@@ -260,20 +272,32 @@ public:
   bool sendDiscoverRequest() {
     uint8_t cmd_bytes[6];
     cmd_bytes[0] = CTL_TYPE_NODE_DISCOVER_REQ | 1; // DISCOVER_REQ | prefix only
-    cmd_bytes[1] = 0xFF;     // Repeaters
-    _task->getMesh()->getRNG()->random((uint8_t *) &disc_node_req_tag, 4);  // generate random tag
-    memcpy(&cmd_bytes[2], &disc_node_req_tag, 4);
-    disc_nodes_count = 0;
+#ifdef THINKNODE_M1
+    cmd_bytes[1] = 1 << ADV_TYPE_REPEATER;
+#else
+    cmd_bytes[1] = 0xFF;
+#endif
+    uint32_t tag;
+    _task->getMesh()->getRNG()->random((uint8_t *) &tag, sizeof(tag));
+    memcpy(&cmd_bytes[2], &tag, sizeof(tag));
     mesh::Packet* req = _task->getMesh()->createControlData(cmd_bytes, sizeof(cmd_bytes));
     if (req) {
+      disc_node_req_tag = tag;
+      disc_nodes_count = 0;
+      discoveryState = DiscoveryState::Waiting;
       _task->getMesh()->sendZeroHop(req);
       discovery_req_time = millis();
       return true;
     }
+    if (discoveryState == DiscoveryState::Idle) discoveryState = DiscoveryState::SendFailed;
     return false;
   }
 
   void handleDiscoverResponse(const mesh::Packet* packet) {
+    if (discoveryState != DiscoveryState::Waiting && discoveryState != DiscoveryState::CanRetry) return;
+#ifdef THINKNODE_M1
+    if ((packet->payload[0] & 0x0F) != ADV_TYPE_REPEATER) return;
+#endif
     if (disc_nodes_count < DISCOVERED_NODES_TABLE_SIZE && memcmp(&packet->payload[2], &disc_node_req_tag, 4) == 0) {
       auto d = &discovered[disc_nodes_count++];
       memcpy(d->pubkey_prefix, &packet->payload[6], 8);
@@ -593,11 +617,25 @@ public:
         display.setCursor(display.width() - snr_width - 1, y);
         display.print(snr_s);
       }
-      if (millis() < discovery_req_time + 5000) {
+      bool waiting = updateDiscoveryState() == DiscoveryState::Waiting;
+#ifdef THINKNODE_M1
+      if (count == 0) {
+        const char* status = "Find repeaters";
+        if (waiting) status = "Waiting for replies";
+        else if (discoveryState == DiscoveryState::CanRetry) status = "No replies yet";
+        else if (discoveryState == DiscoveryState::SendFailed) status = "Couldn't start scan";
+        display.drawTextCentered(display.width() / 2, 28, status);
+        if (!waiting) display.drawTextCentered(display.width() / 2, 46, SCAN_HINT);
+      }
+#endif
+      if (waiting) {
         return 1000; // more frequent updates just after req
-      } else if (count < DISCOVERED_NODES_TABLE_SIZE -1) { // show only 5 sec after last disc
+      } else if (count < DISCOVERED_NODES_TABLE_SIZE -1) {
+#ifdef THINKNODE_M1
+        if (count == 0) return 5000;
+#endif
         y = 10 + 11 * DISCOVERED_NODES_TABLE_SIZE;
-        display.drawTextCentered(display.width() / 2, y, "discover: " PRESS_LABEL);
+        display.drawTextCentered(display.width() / 2, y, SCAN_HINT);
       }
 #endif
 #ifndef UI_NO_HIBERNATE
@@ -676,8 +714,12 @@ public:
 #endif
 #if UI_DISCOVER_SCREEN
     if (c == KEY_ENTER && _page == HomePage::DISCOVERY) {
-      if (millis() > discovery_req_time + 5000) { // rate limiter
-        sendDiscoverRequest();
+      DiscoveryState beforeScan = updateDiscoveryState();
+      if (beforeScan != DiscoveryState::Waiting && !sendDiscoverRequest()) {
+#ifdef THINKNODE_M1
+        if (beforeScan == DiscoveryState::Idle) return true;
+#endif
+        _task->showAlert("Couldn't start scan", 1000);
       }
       return true;
     }
