@@ -1,4 +1,5 @@
 #include "UITask.h"
+#include <helpers/ui/SleepBadge.h>
 #include <helpers/TxtDataHelpers.h>
 #include "target.h"
 #include <time.h>
@@ -63,24 +64,24 @@ public:
     // meshcore logo
     display.setColor(UIColor::corp_blue);
     int logoWidth = 128;
-    display.drawXbm((display.width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
+    display.drawXbm((display.width() - logoWidth) / 2, 3 + sleepBadge::reservedHeight, meshcore_logo, logoWidth, 13);
 
     // meshcore website
     const char* website = "https://meshcore.io";
     display.setColor(UIColor::primary_txt);
     display.setTextSize(1);
     uint16_t websiteWidth = display.getTextWidth(website);
-    display.setCursor((display.width() - websiteWidth) / 2, 22);
+    display.setCursor((display.width() - websiteWidth) / 2, 22 + sleepBadge::reservedHeight);
     display.print(website);
 
     // version info
     display.setColor(UIColor::primary_txt);
     display.setTextSize(1);
-    display.drawTextCentered(display.width()/2, 35, _version_info);
+    display.drawTextCentered(display.width()/2, 35 + sleepBadge::reservedHeight, _version_info);
 
     display.setColor(UIColor::secondary_txt);
     display.setTextSize(1);
-    display.drawTextCentered(display.width()/2, 48, _build_date);
+    display.drawTextCentered(display.width()/2, 48 + sleepBadge::reservedHeight, _build_date);
 
     return 1000;
   }
@@ -160,7 +161,7 @@ class HomeScreen : public UIScreen {
   uint32_t discovery_req_time = 0;
 #endif
 
-  void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
+  int renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
     // Convert millivolts to percentage
 #ifndef BATT_MIN_MILLIVOLTS
   #define BATT_MIN_MILLIVOLTS 3000
@@ -177,7 +178,7 @@ class HomeScreen : public UIScreen {
     // battery icon
     int iconWidth = 24;
     int iconHeight = 10;
-    int iconX = display.width() - iconWidth - 5; // Position the icon near the top-right corner
+    int iconX = display.width() - iconWidth - 5;
     int iconY = 0;
     display.setColor(UIColor::title_txt);
 
@@ -194,13 +195,16 @@ class HomeScreen : public UIScreen {
     // while charging, show a bolt (or a plug once full) just left of the battery,
     // keeping the fill bar itself clean and uninterrupted
     bool charging = board.isExternalPowered();
+    int left = iconX;
+    constexpr int iconSpacing = 9;
     if (charging) {
       // There's no charge-complete signal on most boards, so "full" is a high
       // voltage band rather than an exact 100% (a real pack rarely reads 4.2V).
       const int BATT_FULL_PCT = 95;
       const uint8_t* symbol = (batteryPercentage >= BATT_FULL_PCT) ? plug_icon : charging_icon;
       display.setColor(UIColor::title_txt);
-      display.drawXbm(iconX - 9, iconY + 1, symbol, 8, 8);
+      left -= iconSpacing;
+      display.drawXbm(left, iconY + 1, symbol, 8, 8);
     }
 
     // show muted icon if buzzer is muted (shifted further left when the charging
@@ -208,9 +212,12 @@ class HomeScreen : public UIScreen {
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(UIColor::warning_txt);
-      display.drawXbm(iconX - (charging ? 18 : 9), iconY + 1, muted_icon, 8, 8);
+      left -= mutedWidth + mutedRightGap;
+      const int top = iconY + (mutedHeight < iconHeight ? (iconHeight - mutedHeight) / 2 : 0);
+      display.drawXbm(left, top, muted_icon, mutedWidth, mutedHeight);
     }
 #endif
+    return left;
   }
 
   CayenneLPP sensors_lpp;
@@ -302,14 +309,20 @@ public:
     char tmp[80];
     // node name
     display.setTextSize(1);
-    display.setColor(UIColor::title_txt);
     char filtered_name[sizeof(_node_prefs->node_name)];
     display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
+#ifdef THINKNODE_M1
+    int statusLeft = renderBatteryIndicator(display, _task->getBattMilliVolts());
+    display.setColor(UIColor::title_txt);
+    constexpr int nameY = -1;
+    display.drawTextEllipsized(sleepBadge::reservedWidth, nameY,
+                               statusLeft - sleepBadge::reservedWidth - 2, filtered_name);
+#else
+    display.setColor(UIColor::title_txt);
     display.setCursor(0, 2);
     display.print(filtered_name);
-
-    // battery voltage
     renderBatteryIndicator(display, _task->getBattMilliVolts());
+#endif
 
     // curr page indicator
     if (UIColor::title_bkg == UIColor::window_bkg) {
@@ -733,7 +746,7 @@ public:
 
   int render(DisplayDriver& display) override {
     char tmp[16];
-    display.setCursor(0, 0);
+    display.setCursor(sleepBadge::reservedWidth, 0);
     display.setTextSize(1);
     display.setColor(UIColor::corp_blue);
     sprintf(tmp, "Unread: %d", num_unread);

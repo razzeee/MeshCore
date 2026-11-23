@@ -117,9 +117,21 @@ static const uint8_t advert_icon[] = {
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
+#ifdef THINKNODE_M1
+static constexpr int mutedWidth = 14, mutedHeight = 10;
+static constexpr int mutedRightGap = 4;
+static const uint8_t muted_icon[] = {
+  0x06, 0x00, 0x0e, 0x00, 0x1e, 0x88, 0x3e, 0x50,
+  0xfe, 0x20, 0xfe, 0x20, 0x3e, 0x50, 0x1e, 0x88,
+  0x0e, 0x00, 0x06, 0x00
+};
+#else
+static constexpr int mutedWidth = 8, mutedHeight = 8;
+static constexpr int mutedRightGap = 1;
 static const uint8_t muted_icon[] = {
   0x20, 0x6a, 0xea, 0xe4, 0xe4, 0xea, 0x6a, 0x20
 };
+#endif
 
 // small lightning bolt, 8x8px, shown next to the battery icon while charging
 static const uint8_t charging_icon[] = {

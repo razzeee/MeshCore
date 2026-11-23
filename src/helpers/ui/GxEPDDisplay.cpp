@@ -1,5 +1,6 @@
 
 #include "GxEPDDisplay.h"
+#include "SleepBadge.h"
 
 #ifndef DISPLAY_ROTATION
   #define DISPLAY_ROTATION 3
@@ -70,6 +71,12 @@ void GxEPDDisplay::turnOn(int max_partial) {
   turnOn();
 }
 
+#ifdef THINKNODE_M1
+static const uint8_t sleep_icon[] = {
+  0x1c, 0xf0, 0x38, 0x20, 0x70, 0x40, 0x60, 0xf0, 0x60, 0x00,
+  0x70, 0x00, 0x3c, 0x40, 0x1f, 0x80, 0x0f, 0x00
+};
+#else
 // 24x24 sleep icon, MSB-first (matches GxEPDDisplay::drawXbm)
 static const uint8_t sleep_icon_24x24[] = {
   0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0x00, 0xe0, 0x0e, 0x03, 0xc0, 0x18,
@@ -79,8 +86,13 @@ static const uint8_t sleep_icon_24x24[] = {
   0xff, 0xf0, 0x00, 0x7f, 0xfc, 0x00, 0x7f, 0xff, 0xf8, 0x3f, 0xff, 0xf0,
   0x1f, 0xff, 0xf0, 0x0f, 0xff, 0xe0, 0x07, 0xff, 0x80, 0x01, 0xff, 0x00
 };
+#endif
 
 void GxEPDDisplay::drawSleepIcon() {
+#ifdef THINKNODE_M1
+  _curr_color = GxEPD_BLACK;
+  drawXbm(1, 1, sleep_icon, sleepBadge::width, sleepBadge::height);
+#else
   const int W = 24, H = 24;
   int x = (int)(display.width() / scale_x) - W;   // top-right, logical coordinates
   int y = 0;
@@ -88,6 +100,7 @@ void GxEPDDisplay::drawSleepIcon() {
   display.fillRect((x - 5) * scale_x - 1, y * scale_y, (W+5) * scale_x + 2, (H-2) * scale_y + 1, GxEPD_WHITE);
   _curr_color = GxEPD_BLACK;
   drawXbm(x, y, sleep_icon_24x24, W, H);
+#endif
   if (_busy_hook) display.epd2.setBusyCallback(busyCallback, this);
   display.display(true);
   display.epd2.setBusyCallback(NULL);
