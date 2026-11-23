@@ -16,16 +16,23 @@
 
 #include "DisplayDriver.h"
 
+template <typename Panel, uint16_t Height>
+class TextEpaperPanel : public GxEPD2_BW<Panel, Height> {
+public:
+  using GxEPD2_BW<Panel, Height>::GxEPD2_BW;
+  using GxEPD2_BW<Panel, Height>::charBounds;
+};
+
 class GxEPDDisplay : public DisplayDriver {
 
 #if defined(EINK_DISPLAY_MODEL)
-  GxEPD2_BW<EINK_DISPLAY_MODEL, EINK_DISPLAY_MODEL::HEIGHT> display;
+  TextEpaperPanel<EINK_DISPLAY_MODEL, EINK_DISPLAY_MODEL::HEIGHT> display;
   const float scale_x  = EINK_SCALE_X; 
   const float scale_y  = EINK_SCALE_Y;
   const float offset_x = EINK_X_OFFSET;
   const float offset_y = EINK_Y_OFFSET;
 #else
-  GxEPD2_BW<GxEPD2_150_BN, 200> display;
+  TextEpaperPanel<GxEPD2_150_BN, 200> display;
   const float scale_x  = 1.5625f;
   const float scale_y  = 1.5625f;
   const float offset_x = 0;
@@ -34,6 +41,10 @@ class GxEPDDisplay : public DisplayDriver {
   bool _init = false;
   bool _isOn = false;
   uint16_t _curr_color;
+  const GFXfont* textFont;
+#ifdef THINKNODE_M1
+  const GFXfont* fontFor(uint8_t c) const;
+#endif
   CRC32 display_crc;
   int last_display_crc_value = 0;
   bool _force_full_refresh = false;
@@ -71,6 +82,9 @@ public:
   void setColor(ColorVal c) override;
   void setCursor(int x, int y) override;
   void print(const char* str) override;
+#ifdef THINKNODE_M1
+  void translateUTF8ToBlocks(char* dest, const char* src, size_t size) override;
+#endif
   void fillRect(int x, int y, int w, int h) override;
   void drawRect(int x, int y, int w, int h) override;
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;

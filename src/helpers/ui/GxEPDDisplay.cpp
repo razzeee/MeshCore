@@ -1,5 +1,8 @@
 
 #include "GxEPDDisplay.h"
+#ifdef THINKNODE_M1
+  #include "EinkEmoji.h"
+#endif
 
 #ifndef DISPLAY_ROTATION
   #define DISPLAY_ROTATION 3
@@ -146,18 +149,19 @@ void GxEPDDisplay::setTextSize(int sz) {
   display_crc.update<int>(sz);
   switch(sz) {
     case 1:  // Small
-      display.setFont(&FreeSans9pt7b);
+      textFont = &FreeSans9pt7b;
       break;
     case 2:  // Medium Bold
-      display.setFont(&FreeSansBold12pt7b);
+      textFont = &FreeSansBold12pt7b;
       break;
     case 3:  // Large
-      display.setFont(&FreeSans18pt7b);
+      textFont = &FreeSans18pt7b;
       break;
     default:
-      display.setFont(&FreeSans9pt7b);
+      textFont = &FreeSans9pt7b;
       break;
   }
+  display.setFont(textFont);
 }
 
 void GxEPDDisplay::setColor(ColorVal c) {
@@ -173,8 +177,27 @@ void GxEPDDisplay::setCursor(int x, int y) {
 
 void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
+#ifdef THINKNODE_M1
+  while (*str) {
+    uint8_t glyph = einkEmoji::nextDisplayGlyph(str);
+    display.setFont(fontFor(glyph));
+    display.write(glyph);
+  }
+  display.setFont(textFont);
+#else
   display.print(str);
+#endif
 }
+
+#ifdef THINKNODE_M1
+const GFXfont* GxEPDDisplay::fontFor(uint8_t c) const {
+  return c >= einkEmoji::first && c < einkEmoji::first + einkEmoji::count ? &einkEmoji::font : textFont;
+}
+
+void GxEPDDisplay::translateUTF8ToBlocks(char* dest, const char* src, size_t size) {
+  einkEmoji::encode(dest, src, size);
+}
+#endif
 
 void GxEPDDisplay::fillRect(int x, int y, int w, int h) {
   display_crc.update<int>(x);
@@ -234,9 +257,22 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 }
 
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
-  int16_t x1, y1;
+  display.setTextWrap(false);
+#ifdef THINKNODE_M1
+  int16_t x = 0, y = 0, minX = INT16_MAX, minY = INT16_MAX, maxX = -1, maxY = -1;
+  while (*str) {
+    uint8_t glyph = einkEmoji::nextDisplayGlyph(str);
+    display.setFont(fontFor(glyph));
+    display.charBounds(glyph, &x, &y, &minX, &minY, &maxX, &maxY);
+  }
+  display.setFont(textFont);
+  uint16_t w = maxX >= minX ? maxX - minX + 1 : 0;
+#else
+  int16_t x, y;
   uint16_t w, h;
-  display.getTextBounds(str, 0, 0, &x1, &y1, &w, &h);
+  display.getTextBounds(str, 0, 0, &x, &y, &w, &h);
+#endif
+  display.setTextWrap(true);
   return ceil((w + 1) / scale_x);
 }
 
