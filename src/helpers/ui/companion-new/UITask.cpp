@@ -873,6 +873,10 @@ void UITask::onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t t
 
   uint8_t path_len = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
   ((MsgPreviewScreen *) msg_preview)->addPreview(path_len, from.name, text);
+  showMessagePreview(UIEventType::contactMessage);
+}
+
+void UITask::showMessagePreview(UIEventType event) {
   setCurrScreen(msg_preview);
 
   if (_display != NULL) {
@@ -880,37 +884,24 @@ void UITask::onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t t
       _display->turnOn(_node_prefs->ui_max_partial);
     }
     if (_display->isOn()) {
-      _auto_off = millis() + _node_prefs->ui_auto_off_delay * 1000;  // extend the auto-off timer
-      _next_refresh = 100;  // trigger refresh
-      if (_node_prefs->ui_backlight_on_msgs) {
+      _auto_off = millis() + _node_prefs->ui_auto_off_delay * 1000;
+      bool lightMessage = _node_prefs->ui_backlight_on_msgs;
+#ifndef THINKNODE_M1
+      lightMessage = lightMessage && event == UIEventType::contactMessage;
+#endif
+      if (lightMessage) {
         _backlight_off = millis() + _node_prefs->ui_backlight_delay * 1000;
       }
     }
   }
 
-  if (!hasConnection()) {
-    notify(UIEventType::contactMessage);
-  }
+  if (!hasConnection()) notify(event);
 }
 
 void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_details, const char* text) {
   uint8_t path_len = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
   ((MsgPreviewScreen *) msg_preview)->addPreview(path_len, channel_details.name, text);
-  setCurrScreen(msg_preview);
-
-  if (_display != NULL) {
-    if (!_display->isOn() && !hasConnection()) {
-      _display->turnOn(_node_prefs->ui_max_partial);
-    }
-    if (_display->isOn()) {
-    _auto_off = millis() + _node_prefs->ui_auto_off_delay * 1000;  // extend the auto-off timer
-    _next_refresh = 100;  // trigger refresh
-    }
-  }
-
-  if (!hasConnection()) {
-    notify(UIEventType::channelMessage);
-  }
+  showMessagePreview(UIEventType::channelMessage);
 }
 
 void UITask::onQueueSizeChanged(int msgcount) {

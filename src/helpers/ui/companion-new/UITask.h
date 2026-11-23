@@ -90,6 +90,7 @@ class UITask : public AbstractUITask {
   char handleTripleClick(char c);
 
   void setCurrScreen(UIScreen* c);
+  void showMessagePreview(UIEventType event);
 
 public:
 
