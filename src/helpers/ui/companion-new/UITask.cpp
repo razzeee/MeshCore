@@ -37,6 +37,13 @@
 
 #include "icons.h"
 
+static void formatAge(char* buf, size_t size, uint32_t now, uint32_t received) {
+  unsigned long seconds = now >= received ? now - received : 0;
+  if (seconds < 60) snprintf(buf, size, "%lus", seconds);
+  else if (seconds < 3600) snprintf(buf, size, "%lum", seconds / 60);
+  else snprintf(buf, size, "%luh", seconds / 3600);
+}
+
 class SplashScreen : public UIScreen {
   UITask* _task;
   unsigned long dismiss_after;
@@ -381,14 +388,7 @@ public:
       for (int i = 0, k = recent_next_idx; i < UI_RECENT_LIST_SIZE; i++, y += 11, k = (k + 1) % UI_RECENT_LIST_SIZE) {
         auto a = &recent[k];
         if (a->name[0] == 0) continue;  // empty slot
-        int secs = _rtc->getCurrentTime() - a->recv_timestamp;
-        if (secs < 60) {
-          sprintf(tmp, "%ds", secs);
-        } else if (secs < 60*60) {
-          sprintf(tmp, "%dm", secs / 60);
-        } else {
-          sprintf(tmp, "%dh", secs / (60*60));
-        }
+        formatAge(tmp, sizeof(tmp), _rtc->getCurrentTime(), a->recv_timestamp);
 
         int timestamp_width = display.getTextWidth(tmp);
         int max_name_width = display.width() - timestamp_width - 1;
@@ -741,14 +741,7 @@ public:
 
     auto p = &unread[head];
 
-    int secs = _rtc->getCurrentTime() - p->timestamp;
-    if (secs < 60) {
-      sprintf(tmp, "%ds", secs);
-    } else if (secs < 60*60) {
-      sprintf(tmp, "%dm", secs / 60);
-    } else {
-      sprintf(tmp, "%dh", secs / (60*60));
-    }
+    formatAge(tmp, sizeof(tmp), _rtc->getCurrentTime(), p->timestamp);
     display.setCursor(display.width() - display.getTextWidth(tmp) - 2, 0);
     display.print(tmp);
 
