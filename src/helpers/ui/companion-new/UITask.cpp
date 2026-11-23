@@ -150,6 +150,9 @@ class HomeScreen : public UIScreen {
   SensorManager* _sensors;
   NodePrefs* _node_prefs;
   uint8_t _page;
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+  bool pinEligibility = false;
+#endif
   bool _shutdown_init;
   int recent_next_idx;
   AdvertPath recent[UI_RECENT_LIST_SIZE];
@@ -240,6 +243,13 @@ class HomeScreen : public UIScreen {
   }
 
 public:
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+  bool canShowPairingPin() const {
+    return _page == HomePage::BLUETOOTH && _task->isBluetoothEnabled() &&
+           !_task->hasConnection() && _task->getBLEPin() != 0;
+  }
+#endif
+
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
      : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0),
        _shutdown_init(false), sensors_lpp(200)
@@ -291,6 +301,13 @@ public:
 #endif
 
   void poll() override {
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+    bool eligible = canShowPairingPin();
+    if (pinEligibility != eligible) {
+      pinEligibility = eligible;
+      _task->gotoHomeScreen();
+    }
+#endif
     if (_shutdown_init && !_task->isButtonPressed()) {  // must wait for USR button to be released
       _task->shutdown();
     }
@@ -364,7 +381,9 @@ public:
           display.drawTextCentered(display.width() / 2, 110, "< Connected >");
         else
           display.drawTextCentered(display.width() / 2, 43, "< Connected >");
-      } else if (_task->getBLEPin() != 0) { // BT pin
+      }
+#ifndef THINKNODE_M1
+      else if (_task->getBLEPin() != 0) { // BT pin
         display.setColor(UIColor::warning_txt);
         sprintf(tmp, "Pin:%d", _task->getBLEPin());
         if (_node_prefs->ui_show_clock) {
@@ -375,6 +394,7 @@ public:
           display.drawTextCentered(display.width() / 2, 43, tmp);
         }
       }
+#endif
     } else if (_page == HomePage::RECENT) {
       display.setColor(UIColor::primary_txt);
       int y = 20;
@@ -427,6 +447,12 @@ public:
       display.setColor(UIColor::secondary_txt);
       display.setTextSize(1);
       display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+#ifdef THINKNODE_M1
+      if (canShowPairingPin()) {
+        snprintf(tmp, sizeof(tmp), "PIN: %06lu", (unsigned long)_task->getBLEPin());
+        display.drawTextCentered(display.width() / 2, 76, tmp);
+      }
+#endif
 #endif
     } else if (_page == HomePage::ADVERT) {
       display.setColor(UIColor::corp_blue);
@@ -1090,6 +1116,9 @@ void UITask::loop() {
   if (bev == BUTTON_EVENT_DOUBLE_CLICK) {
     _display->forceFullRefresh();
   } else if (bev == BUTTON_EVENT_TRIPLE_CLICK) {
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+    panelShowsPin = false;
+#endif
     _display->turnOff(true);
     _backlight_off = 0;
   }
@@ -1131,9 +1160,19 @@ void UITask::loop() {
 
   if (curr) curr->poll();
 
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+  if (panelShowsPin && !_display->isOn() &&
+      (curr != home || !((HomeScreen*)home)->canShowPairingPin())) {
+    panelShowsPin = false;
+    _display->turnOff(true);
+  }
+#endif
   if (_display != NULL && _display->isOn()) {
     if (millis() >= _next_refresh && curr) {
       _display->startFrame();
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+      panelShowsPin = curr == home && ((HomeScreen*)home)->canShowPairingPin();
+#endif
       int delay_millis = curr->render(*_display);
       if (millis() < _alert_expiry) {  // render alert popup
         _display->setTextSize(1);
@@ -1161,11 +1200,13 @@ void UITask::loop() {
       }
 #endif
       if (millis() > _auto_off) {
-        if (_node_prefs->ui_auto_off_blank &&
-              !(_node_prefs->ui_auto_off_keep_msgs 
-                          && curr == msg_preview)) { 
-            // don't blank if messages are waiting
-            _display->turnOff(true);
+        bool blank = _node_prefs->ui_auto_off_blank &&
+                     !(_node_prefs->ui_auto_off_keep_msgs && curr == msg_preview);
+        if (blank) {
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+          panelShowsPin = false;
+#endif
+          _display->turnOff(true);
         } else {
           _display->turnOff();
         }

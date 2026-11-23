@@ -66,6 +66,9 @@ class UITask : public AbstractUITask {
   unsigned long ui_started_at, next_batt_chck;
   unsigned long next_backlight_btn_check = 0;
   unsigned long _backlight_off = 0;
+#if defined(THINKNODE_M1) && defined(BLE_PIN_CODE)
+  bool panelShowsPin = false;
+#endif
 #ifdef PIN_STATUS_LED
   int led_state = 0;
   int next_led_change = 0;
