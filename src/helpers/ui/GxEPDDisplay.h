@@ -35,7 +35,9 @@ class GxEPDDisplay : public DisplayDriver {
   bool _isOn = false;
   uint16_t _curr_color;
   CRC32 display_crc;
-  int last_display_crc_value = 0;
+  void hashRect(int x, int y, int w, int h);
+  uint32_t last_display_crc_value = 0;
+  bool _has_displayed_frame = false;
   bool _force_full_refresh = false;
   int _partial_refresh_count = 0;
   int _max_partial_refresh = 0;

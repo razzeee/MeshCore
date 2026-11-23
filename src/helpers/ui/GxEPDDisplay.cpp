@@ -24,6 +24,8 @@ ColorVal UIColor::popup_bkg = GxEPD_WHITE;
 ColorVal UIColor::popup_txt = GxEPD_BLACK;
 ColorVal UIColor::corp_blue = GxEPD_BLACK;
 
+enum class DrawOp : uint8_t { Font, Color, Cursor, Text, Fill, Outline, Bitmap };
+
 bool GxEPDDisplay::begin() {
   display.epd2.selectSPI(SPI1, SPISettings(4000000, MSBFIRST, SPI_MODE0));
 #ifdef ESP32
@@ -48,6 +50,7 @@ bool GxEPDDisplay::begin() {
 
   display.setPartialWindow(0, 0, display.width(), display.height());
   _partial_refresh_count = 0;
+  _has_displayed_frame = false;
 
   #if DISP_BACKLIGHT
   digitalWrite(DISP_BACKLIGHT, LOW);
@@ -100,7 +103,7 @@ void GxEPDDisplay::turnOff(bool blank) {
     drawSleepIcon();
   }
   _isOn = false;
-  last_display_crc_value=0;
+  _has_displayed_frame = false;
   display.hibernate();
 }
 
@@ -112,37 +115,22 @@ void GxEPDDisplay::blankScreen() {
   display.writeScreenBuffer(0xFF); // Forces 0xFF (White) into the display controller's history registers
   display.epd2.setBusyCallback(NULL);
   _partial_refresh_count = 0;
-  last_display_crc_value = 0;
+  _has_displayed_frame = false;
 }
 
 void GxEPDDisplay::clear() {
-  display.fillScreen(GxEPD_WHITE);
-  display.setTextColor(GxEPD_BLACK);
-  display_crc.reset();
+  startFrame(GxEPD_WHITE);
 }
 
 void GxEPDDisplay::startFrame(ColorVal bkg) {
   display.fillScreen(bkg);
   display.setTextColor(_curr_color = UIColor::primary_txt);
   display_crc.reset();
-  if (_force_full_refresh 
-      || (_max_partial_refresh > 0 
-          && _partial_refresh_count >= _max_partial_refresh)) {
-    // forces a full wipe of the screen ...
-    if (_busy_hook) display.epd2.setBusyCallback(busyCallback, this);
-    display.clearScreen(0xFF); // Clears microcontroller side RAM
-    display.writeScreenBuffer(0xFF); // Forces 0xFF (White) into the display controller's history registers
-    display.epd2.setBusyCallback(NULL);
-    // we'll need a partial refresh after that (whatever crc value is)
-    last_display_crc_value = 0;
-    _partial_refresh_count = 0;
-    _force_full_refresh = false;
-  } else {
-    display.setPartialWindow(0, 0, display.width(), display.height());
-  }
+  display_crc.update<ColorVal>(bkg);
 }
 
 void GxEPDDisplay::setTextSize(int sz) {
+  display_crc.update(DrawOp::Font);
   display_crc.update<int>(sz);
   switch(sz) {
     case 1:  // Small
@@ -161,49 +149,56 @@ void GxEPDDisplay::setTextSize(int sz) {
 }
 
 void GxEPDDisplay::setColor(ColorVal c) {
+  display_crc.update(DrawOp::Color);
   display_crc.update<ColorVal> (c);
   display.setTextColor(_curr_color = c);
 }
 
 void GxEPDDisplay::setCursor(int x, int y) {
+  display_crc.update(DrawOp::Cursor);
   display_crc.update<int>(x);
   display_crc.update<int>(y);
   display.setCursor((x+offset_x)*scale_x, (y+offset_y)*scale_y);
 }
 
 void GxEPDDisplay::print(const char* str) {
-  display_crc.update<char>(str, strlen(str));
+  size_t length = strlen(str);
+  display_crc.update(DrawOp::Text);
+  display_crc.update(length);
+  display_crc.update<char>(str, length);
   display.print(str);
 }
 
-void GxEPDDisplay::fillRect(int x, int y, int w, int h) {
+void GxEPDDisplay::hashRect(int x, int y, int w, int h) {
   display_crc.update<int>(x);
   display_crc.update<int>(y);
   display_crc.update<int>(w);
   display_crc.update<int>(h);
+}
+
+void GxEPDDisplay::fillRect(int x, int y, int w, int h) {
+  display_crc.update(DrawOp::Fill);
+  hashRect(x, y, w, h);
   display.fillRect(x*scale_x, y*scale_y, w*scale_x, h*scale_y, _curr_color);
 }
 
 void GxEPDDisplay::drawRect(int x, int y, int w, int h) {
-  display_crc.update<int>(x);
-  display_crc.update<int>(y);
-  display_crc.update<int>(w);
-  display_crc.update<int>(h);
+  display_crc.update(DrawOp::Outline);
+  hashRect(x, y, w, h);
   display.drawRect(x*scale_x, y*scale_y, w*scale_x, h*scale_y, _curr_color);
 }
 
 void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
-  display_crc.update<int>(x);
-  display_crc.update<int>(y);
-  display_crc.update<int>(w);
-  display_crc.update<int>(h);
-  display_crc.update<uint8_t>(bits, w * h / 8);
+  if (w <= 0 || h <= 0) return;
+  display_crc.update(DrawOp::Bitmap);
+  hashRect(x, y, w, h);
   // Calculate the base position in display coordinates
   uint16_t startX = x * scale_x;
   uint16_t startY = y * scale_y;
   
   // Width in bytes for bitmap processing
   uint16_t widthInBytes = (w + 7) / 8;
+  display_crc.update<uint8_t>(bits, widthInBytes * h);
   
   // Process the bitmap row by row
   for (uint16_t by = 0; by < h; by++) {
@@ -243,12 +238,16 @@ uint16_t GxEPDDisplay::getTextWidth(const char* str) {
 void GxEPDDisplay::endFrame() {
   if (_isOn == false) return;
   uint32_t crc = display_crc.finalize();
-  if (crc != last_display_crc_value) {
-    // keep the rest of the firmware running while the panel refreshes (~0.5s partial)
-    if (_busy_hook) display.epd2.setBusyCallback(busyCallback, this);
-    display.display(true);
-    display.epd2.setBusyCallback(NULL);
-    _partial_refresh_count++;
-  }
+  if (_has_displayed_frame && crc == last_display_crc_value && !_force_full_refresh) return;
+
+  bool partialRefresh = !_force_full_refresh &&
+                        (_max_partial_refresh <= 0 || _partial_refresh_count < _max_partial_refresh);
+  if (_busy_hook) display.epd2.setBusyCallback(busyCallback, this);
+  display.display(partialRefresh);
+  display.epd2.setBusyCallback(NULL);
+  if (!partialRefresh) _partial_refresh_count = 0;
+  else if (_max_partial_refresh > 0) _partial_refresh_count++;
+  _force_full_refresh = false;
+  _has_displayed_frame = true;
   last_display_crc_value = crc;
 }
