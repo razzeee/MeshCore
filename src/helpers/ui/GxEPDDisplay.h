@@ -33,6 +33,9 @@ class GxEPDDisplay : public DisplayDriver {
 #endif
   bool _init = false;
   bool _isOn = false;
+#ifdef THINKNODE_M1
+  int sleepBadgeX = 0;
+#endif
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
@@ -57,6 +60,9 @@ public:
 
   bool isOn() override { return _isOn; }
   bool isEink() override { return true; }
+#ifdef THINKNODE_M1
+  int reserveSleepBadge(int rightEdge) override;
+#endif
   void forceFullRefresh() override { _force_full_refresh = true; }
   void turnOn(int max_partial) override;
   void setBusyHook(void (*hook)()) override { _busy_hook = hook; }

@@ -72,6 +72,11 @@ void GxEPDDisplay::turnOn(int max_partial) {
 }
 
 #ifdef THINKNODE_M1
+int GxEPDDisplay::reserveSleepBadge(int rightEdge) {
+  sleepBadgeX = rightEdge - sleepBadge::reservedWidth;
+  return sleepBadgeX;
+}
+
 static const uint8_t sleep_icon[] = {
   0x1c, 0xf0, 0x38, 0x20, 0x70, 0x40, 0x60, 0xf0, 0x60, 0x00,
   0x70, 0x00, 0x3c, 0x40, 0x1f, 0x80, 0x0f, 0x00
@@ -91,7 +96,7 @@ static const uint8_t sleep_icon_24x24[] = {
 void GxEPDDisplay::drawSleepIcon() {
 #ifdef THINKNODE_M1
   _curr_color = GxEPD_BLACK;
-  drawXbm(0, 2, sleep_icon, sleepBadge::width, sleepBadge::height);
+  drawXbm(sleepBadgeX, 2, sleep_icon, sleepBadge::width, sleepBadge::height);
 #else
   const int W = 24, H = 24;
   int x = (int)(display.width() / scale_x) - W;   // top-right, logical coordinates
@@ -135,6 +140,9 @@ void GxEPDDisplay::clear() {
 }
 
 void GxEPDDisplay::startFrame(ColorVal bkg) {
+#ifdef THINKNODE_M1
+  sleepBadgeX = 0;
+#endif
   display.fillScreen(bkg);
   display.setTextColor(_curr_color = UIColor::primary_txt);
   display_crc.reset();

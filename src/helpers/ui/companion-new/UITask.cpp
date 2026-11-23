@@ -315,8 +315,7 @@ public:
     int statusLeft = renderBatteryIndicator(display, _task->getBattMilliVolts());
     display.setColor(UIColor::title_txt);
     constexpr int nameY = -1;
-    display.drawTextEllipsized(sleepBadge::reservedWidth, nameY,
-                               statusLeft - sleepBadge::reservedWidth - 2, filtered_name);
+    display.drawTextEllipsized(0, nameY, display.reserveSleepBadge(statusLeft) - 2, filtered_name);
 #else
     display.setColor(UIColor::title_txt);
     display.setCursor(0, 2);
