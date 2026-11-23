@@ -64,7 +64,11 @@ class UITask : public AbstractUITask {
   unsigned long _alert_expiry;
   int _msgcount;
   unsigned long ui_started_at, next_batt_chck;
-  unsigned long next_backlight_btn_check = 0;
+#ifdef BACKLIGHT_BTN
+  uint8_t backlightEvents[16];
+  uint8_t backlightEventCount = 0;
+  void noteBacklightActivity();
+#endif
   unsigned long _backlight_off = 0;
 #ifdef PIN_STATUS_LED
   int led_state = 0;
@@ -82,6 +86,7 @@ class UITask : public AbstractUITask {
   UIScreen* curr;
 
   void userLedHandler();
+  void updateBacklight();
 
   // Button action handlers
   char checkDisplayOn(char c);
@@ -106,6 +111,9 @@ public:
   int  getMsgCount() const { return _msgcount; }
   bool hasDisplay() const { return _display != NULL; }
   bool isButtonPressed() const;
+#ifdef BACKLIGHT_BTN
+  void sampleBacklightButton(bool duringRefresh = false);
+#endif
 
   BaseChatMesh* getMesh() const { return the_mesh; }
   uint32_t getBLEPin() const  { return _ble_pin; }

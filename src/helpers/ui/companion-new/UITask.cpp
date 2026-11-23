@@ -999,6 +999,54 @@ bool UITask::isButtonPressed() const {
 #endif
 }
 
+#if defined(DISP_BACKLIGHT) || defined(EXP_PIN_BACKLIGHT)
+void UITask::updateBacklight() {
+  bool backlight_state;
+  if (_node_prefs->ui_backlight_delay == -1) {
+    backlight_state = true;
+  } else if (_node_prefs->ui_backlight_delay < -1) {
+    backlight_state = false;
+  } else if (_node_prefs->ui_backlight_delay == 0) {
+    backlight_state = false;
+    #ifdef BACKLIGHT_BTN
+      backlight_state = backlight_btn.isPressed();
+    #endif
+  } else {
+    backlight_state = (millis() < _backlight_off);
+  }
+
+#if defined(DISP_BACKLIGHT)
+  digitalWrite(DISP_BACKLIGHT, backlight_state);
+#elif defined(EXP_PIN_BACKLIGHT)
+  expander.digitalWrite(EXP_PIN_BACKLIGHT, backlight_state);
+#endif
+}
+#endif
+
+#ifdef BACKLIGHT_BTN
+void UITask::noteBacklightActivity() {
+  _auto_off = millis() + _node_prefs->ui_auto_off_delay * 1000;
+  _backlight_off = millis() + _node_prefs->ui_backlight_delay * 1000UL;
+}
+
+void UITask::sampleBacklightButton(bool duringRefresh) {
+#ifdef DISP_BACKLIGHT
+  if (duringRefresh && _node_prefs->ui_backlight_delay == 0) {
+    updateBacklight();
+  }
+#endif
+  int event = backlight_btn.checkDebounced();
+  if (backlight_btn.isPressed()) {
+    noteBacklightActivity();
+  } else if (event != BUTTON_EVENT_NONE) {
+    _auto_off = millis() + _node_prefs->ui_auto_off_delay * 1000;
+  }
+  if (event != BUTTON_EVENT_NONE && backlightEventCount < sizeof(backlightEvents)) {
+    backlightEvents[backlightEventCount++] = event;
+  }
+}
+#endif
+
 void UITask::loop() {
   char c = 0;
 #if UI_HAS_JOYSTICK
@@ -1075,45 +1123,30 @@ void UITask::loop() {
 #endif
 #if defined(DISP_BACKLIGHT) || defined(EXP_PIN_BACKLIGHT)
 #if defined(BACKLIGHT_BTN)
-  if (millis() > next_backlight_btn_check) {
-    if (backlight_btn.isPressed()) {
-      if (!_display->isOn()) {
-        _display->turnOn(_node_prefs->ui_max_partial);
-        _next_refresh = 0;
-      }
-      _auto_off = millis() + _node_prefs->ui_auto_off_delay * 1000;   // extend auto-off timer
-      _backlight_off = millis() + _node_prefs->ui_backlight_delay * 1000; // extend auto_off for backlight
-    }
-    next_backlight_btn_check = millis() + 100;
+  sampleBacklightButton();
+  int bev = BUTTON_EVENT_NONE;
+  if (backlightEventCount) {
+    bev = backlightEvents[0];
+    memmove(backlightEvents, backlightEvents + 1, --backlightEventCount);
   }
-  int bev = backlight_btn.check();
+  if (bev == BUTTON_EVENT_CLICK || bev == BUTTON_EVENT_DOUBLE_CLICK || bev == BUTTON_EVENT_LONG_PRESS) {
+    if (!_display->isOn()) {
+      _display->turnOn(_node_prefs->ui_max_partial);
+      _next_refresh = 0;
+    }
+    noteBacklightActivity();
+  }
   if (bev == BUTTON_EVENT_DOUBLE_CLICK) {
     _display->forceFullRefresh();
+    _next_refresh = 0;
   } else if (bev == BUTTON_EVENT_TRIPLE_CLICK) {
-    _display->turnOff(true);
     _backlight_off = 0;
+    updateBacklight();
+    _display->turnOff(true);
   }
 #endif
 
-  bool backlight_state;
-  if (_node_prefs->ui_backlight_delay == -1) {
-    backlight_state = true;
-  } else if (_node_prefs->ui_backlight_delay < -1) {
-    backlight_state = false;
-  } else if (_node_prefs->ui_backlight_delay == 0) {
-    backlight_state = false;
-    #ifdef BACKLIGHT_BTN
-      backlight_state = backlight_btn.isPressed();
-    #endif
-  } else {
-    backlight_state = (millis() < _backlight_off);
-  }
-
-#if defined(DISP_BACKLIGHT)
-  digitalWrite(DISP_BACKLIGHT, backlight_state);
-#elif defined(EXP_PIN_BACKLIGHT)
-  expander.digitalWrite(EXP_PIN_BACKLIGHT, backlight_state);
-#endif
+  updateBacklight();
 #endif
 
   if (c != 0 && curr) {
@@ -1150,7 +1183,12 @@ void UITask::loop() {
       }
       _display->endFrame();
     }
-    if (_node_prefs->ui_auto_off_delay > 0) {
+#ifdef BACKLIGHT_BTN
+    bool pendingInput = backlightEventCount != 0;
+#else
+    constexpr bool pendingInput = false;
+#endif
+    if (_node_prefs->ui_auto_off_delay > 0 && !pendingInput) {
 #ifdef KEEP_DISPLAY_ON_USB
       // Opt-in: refresh the auto-off deadline while externally powered, so the
       // timer counts from the moment external power is removed. Off by default

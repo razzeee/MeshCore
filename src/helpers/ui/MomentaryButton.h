@@ -19,14 +19,19 @@ class MomentaryButton {
   unsigned long _last_click_time;
   int _multi_click_window;
   bool _pending_click;
+  int8_t lastRawLevel;
+  unsigned long levelChangedAt = 0;
 
   bool isPressed(int level) const;
+  int readRawLevel() const;
+  int checkLevel(int btn, bool repeat_click);
 
 public:
   MomentaryButton(int8_t pin, int long_press_mills=0, bool reverse=false, bool pulldownup=false, bool multiclick=true);
   MomentaryButton(int8_t pin, int long_press_mills, int analog_threshold);
   virtual void begin();
   virtual int check(bool repeat_click=false);  // returns one of BUTTON_EVENT_*
+  int checkDebounced();
   void cancelClick();  // suppress next BUTTON_EVENT_CLICK (if already in DOWN state)
   uint8_t getPin() { return _pin; }
   bool isPressed() const;

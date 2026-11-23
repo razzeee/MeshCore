@@ -347,6 +347,9 @@ static void loopDuringDisplayRefresh() {
   static bool active = false;
   if (active) return;
   active = true;
+#ifdef BACKLIGHT_BTN
+  ui_task.sampleBacklightButton(true);
+#endif
   loopCore();
   active = false;
 }

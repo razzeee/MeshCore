@@ -8,6 +8,7 @@ MomentaryButton::MomentaryButton(int8_t pin, int long_press_millis, bool reverse
   _pull = pulldownup;
   down_at = 0; 
   prev = _reverse ? HIGH : LOW;
+  lastRawLevel = prev;
   cancel = 0;
   _long_millis = long_press_millis;
   _threshold = 0;
@@ -23,6 +24,7 @@ MomentaryButton::MomentaryButton(int8_t pin, int long_press_millis, int analog_t
   _pull = false;
   down_at = 0;
   prev = LOW;
+  lastRawLevel = prev;
   cancel = 0;
   _long_millis = long_press_millis;
   _threshold = analog_threshold;
@@ -38,9 +40,12 @@ void MomentaryButton::begin() {
   }
 }
 
-bool  MomentaryButton::isPressed() const {
-  int btn = _threshold > 0 ? (analogRead(_pin) < _threshold) : digitalRead(_pin);
-  return isPressed(btn);
+int MomentaryButton::readRawLevel() const {
+  return _threshold > 0 ? (analogRead(_pin) < _threshold) : digitalRead(_pin);
+}
+
+bool MomentaryButton::isPressed() const {
+  return isPressed(readRawLevel());
 }
 
 void MomentaryButton::cancelClick() {
@@ -65,8 +70,21 @@ bool MomentaryButton::isPressed(int level) const {
 int MomentaryButton::check(bool repeat_click) {
   if (_pin < 0) return BUTTON_EVENT_NONE;
 
+  return checkLevel(readRawLevel(), repeat_click);
+}
+
+int MomentaryButton::checkDebounced() {
+  if (_pin < 0) return BUTTON_EVENT_NONE;
+  int btn = readRawLevel();
+  if (btn != lastRawLevel) {
+    lastRawLevel = btn;
+    levelChangedAt = millis();
+  }
+  return checkLevel(millis() - levelChangedAt >= 12 ? btn : prev, false);
+}
+
+int MomentaryButton::checkLevel(int btn, bool repeat_click) {
   int event = BUTTON_EVENT_NONE;
-  int btn = _threshold > 0 ? (analogRead(_pin) < _threshold) : digitalRead(_pin);
   if (btn != prev) {
     if (isPressed(btn)) {
       down_at = millis();
