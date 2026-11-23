@@ -91,7 +91,7 @@ static const uint8_t sleep_icon_24x24[] = {
 void GxEPDDisplay::drawSleepIcon() {
 #ifdef THINKNODE_M1
   _curr_color = GxEPD_BLACK;
-  drawXbm(1, 1, sleep_icon, sleepBadge::width, sleepBadge::height);
+  drawXbm(0, 2, sleep_icon, sleepBadge::width, sleepBadge::height);
 #else
   const int W = 24, H = 24;
   int x = (int)(display.width() / scale_x) - W;   // top-right, logical coordinates
