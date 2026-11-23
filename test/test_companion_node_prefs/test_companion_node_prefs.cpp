@@ -4,7 +4,12 @@
 #include <cstring>
 #include <string>
 
+#define THINKNODE_M1 1
+#define DISPLAY_CLASS GxEPDDisplay
 #include "../../src/helpers/CompanionNodePrefs.h"
+
+bool CommonRadioPrefs::getByKey(const char*, char*, size_t) { return false; }
+bool CommonRadioPrefs::setByKey(const char*, const char*) { return false; }
 
 class ReplayStream : public Stream {
   const char* _text;
@@ -76,6 +81,28 @@ TEST(CompanionNodePrefs, RxGainSettingsRoundTripIndependently) {
   EXPECT_EQ(1, loaded.radio_fem_txgain);
 }
 #endif
+
+TEST(CompanionNodePrefs, M1KnobStaysEnabledOnFreshInstallAndUpgrade) {
+  NodePrefs prefs;
+  EXPECT_EQ(-1, prefs.ui_backlight_delay);
+  ReplayStream oldDefault("{ui:{bl_dly:5}}");
+  ASSERT_TRUE(prefs.loadSerial(oldDefault));
+  EXPECT_EQ(-1, prefs.ui_backlight_delay);
+}
+
+TEST(CompanionNodePrefs, M1PreservesCustomTimeoutsIncludingFiveAfterUpgrade) {
+  NodePrefs prefs;
+  ReplayStream oldCustom("{ui:{bl_dly:30}}");
+  ASSERT_TRUE(prefs.loadSerial(oldCustom));
+  EXPECT_EQ(30, prefs.ui_backlight_delay);
+  prefs.ui_backlight_delay = 5;
+  CaptureStream saved;
+  ASSERT_TRUE(prefs.saveSerial(saved));
+  NodePrefs restored;
+  ReplayStream input(saved.text().c_str());
+  ASSERT_TRUE(restored.loadSerial(input));
+  EXPECT_EQ(5, restored.ui_backlight_delay);
+}
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

@@ -77,7 +77,11 @@ public:
   #endif
   uint8_t ui_show_clock = UI_SHOW_CLOCK;
   uint32_t ui_auto_off_delay = AUTO_OFF_MILLIS / 1000;
+#ifdef THINKNODE_M1
+  int32_t ui_backlight_delay = -1;
+#else
   int32_t ui_backlight_delay = 5;
+#endif
   #if defined(BACKLIGHT_BTN)
   uint8_t ui_backlight_on_keys = 0;
   #else
@@ -266,6 +270,9 @@ private:
   	def("show_clock", _parent->ui_show_clock);
   	def("auto_off", _parent->ui_auto_off_delay);
   	def("bl_dly", _parent->ui_backlight_delay);
+#ifdef THINKNODE_M1
+    def("knob_default", _parent->hasKnobDefaultMigrationMarker);
+#endif
   	def("bl_keys", _parent->ui_backlight_on_keys);
   	def("bl_msgs", _parent->ui_backlight_on_msgs);
     def("max_partial", _parent->ui_max_partial);
@@ -299,6 +306,17 @@ protected:
     def("ui", ui);
 #endif
   }
+#if defined(THINKNODE_M1) && defined(DISPLAY_CLASS)
+  bool hasKnobDefaultMigrationMarker = true;
+public:
+  bool loadSerial(Stream& s) {
+    hasKnobDefaultMigrationMarker = false;
+    bool loaded = ConfigSerializer::loadSerial(s);
+    if (loaded && !hasKnobDefaultMigrationMarker && ui_backlight_delay == 5) ui_backlight_delay = -1;
+    hasKnobDefaultMigrationMarker = true;
+    return loaded;
+  }
+#endif
 public:
   NodePrefs() : radio(this), gps(this), companion(this), custom(&radio)
 #ifdef ENABLE_WIFI_INTERFACE
